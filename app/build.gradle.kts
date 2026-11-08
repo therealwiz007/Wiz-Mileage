@@ -12,7 +12,7 @@ android {
         applicationId = "com.wizlabs.mileage"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
+        versionCode = 2026110801
         versionName = "1.0.0"
     }
 

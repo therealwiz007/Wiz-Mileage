@@ -8,7 +8,7 @@ Offline Android fuel log by Wiz Labs. For each fill-up you type the odometer rea
 - App name (under the icon): **Wiz Mileage**
 - Play Store title: **Wiz Mileage: Fuel & Petrol Log**
 - Application ID: `com.wizlabs.mileage`
-- Version: 1.0.0 (versionCode 2)
+- Version: 1.0.0 (versionCode 2026110801, date-based: YYYYMMDD + 2-digit build number)
 - Minimum Android: 8.0 / API 26 · Compile / target SDK: 36
 - No INTERNET permission. The only permission is the camera, requested when you scan a share QR code
 
