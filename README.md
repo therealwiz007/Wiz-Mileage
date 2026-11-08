@@ -8,7 +8,7 @@ Offline Android fuel log by Wiz Labs. For each fill-up you type the odometer rea
 - App name (under the icon): **Wiz Mileage**
 - Play Store title: **Wiz Mileage: Fuel & Petrol Log**
 - Application ID: `com.wizlabs.mileage`
-- Version: 1.0.0 (versionCode 1)
+- Version: 1.0.0 (versionCode 2)
 - Minimum Android: 8.0 / API 26 · Compile / target SDK: 36
 - No INTERNET permission. The only permission is the camera, requested when you scan a share QR code
 
@@ -88,6 +88,7 @@ Release builds use the same GitHub Actions workflow as the other Wiz apps (`.git
 - App icon (512×512, opaque PNG, ready for Play Console): `store-assets/wiz-mileage-play-icon-512.png`. It's drawn from the same geometry as the launcher vectors; to re-render at another size run
   `cd store-assets && javac Icon.java && java -Djava.awt.headless=true Icon out.png 1024`
 - Data safety: no data collected; sharing is user-initiated, device-to-device, and never sent to the developer. Camera: used only for on-device QR scanning
-- Short description: *Log fuel in seconds. See real mileage, cost per km and smart insights.*
+- Short description (76/80): *Petrol & diesel mileage tracker: km/L, cost per km, spend insights. Offline.*
+- Privacy policy URL: https://therealwiz007.github.io/Wiz-Mileage/privacy-policy.html
 
 Fuel brand names are trademarks of their owners and are used only as labels.
