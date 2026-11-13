@@ -1,6 +1,23 @@
 package com.wizlabs.mileage.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
+import com.wizlabs.mileage.ui.components.CountUp
+import com.wizlabs.mileage.ui.components.EmptyArt
+import com.wizlabs.mileage.ui.components.EmptyState
+import com.wizlabs.mileage.ui.components.FuelDrop
+import com.wizlabs.mileage.ui.motion.enterItem
+import com.wizlabs.mileage.ui.motion.rememberAmbientClock
+import com.wizlabs.mileage.ui.motion.rememberEntrance
+import kotlin.math.sin
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -91,6 +108,8 @@ fun HomeScreen(
     val zone = remember { ZoneId.systemDefault() }
     val today = remember { LocalDate.now(zone) }
 
+    val entrance = rememberEntrance(vehicle.id)
+    var n = 0
     LazyColumn(
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
@@ -99,15 +118,15 @@ fun HomeScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { CockpitCard(vehicle, ins, fills.size) }
+        enterItem(entrance, "cockpit", n++) { CockpitCard(vehicle, ins, fills) }
 
         if (fills.isEmpty()) {
-            item { EmptyHome(vehicle, onAdd) }
+            enterItem(entrance, "empty", n++) { EmptyHome(vehicle, onAdd) }
             return@LazyColumn
         }
 
         // Month ring + cost per km
-        item {
+        enterItem(entrance, "month", n++) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 WizCard(Modifier.weight(1f), padding = 16) {
                     Overline("This month")
@@ -140,7 +159,7 @@ fun HomeScreen(
         }
 
         // KPI strip
-        item {
+        enterItem(entrance, "kpi", n++) {
             val kpis = buildList {
                 ins.kmPerDay?.let { add(Triple("Per day", Fmt.km(it), "≈ ${Fmt.inr((ins.costPerKm ?: 0.0) * it)} in fuel")) }
                 add(Triple("Per visit", ins.avgFill?.let { Fmt.inr(it) } ?: "—", ins.avgDaysBetween?.let { "every ${Fmt.dec(it, 0)} days" } ?: ""))
@@ -163,8 +182,8 @@ fun HomeScreen(
 
         // Insight carousel
         if (ins.tips.isNotEmpty()) {
-            item { SectionHeader("For you", "All insights", onSeeInsights) }
-            item {
+            enterItem(entrance, "foryouH", n++) { SectionHeader("For you", "All insights", onSeeInsights) }
+            enterItem(entrance, "foryou", n++) {
                 val pager = rememberPagerState { ins.tips.size }
                 Column {
                     HorizontalPager(pager, pageSpacing = 10.dp) { p -> TipCard(ins.tips[p]) }
@@ -173,9 +192,11 @@ fun HomeScreen(
                     ) {
                         repeat(ins.tips.size) { i ->
                             val sel = i == pager.currentPage
+                            val w by animateDpAsState(if (sel) 18.dp else 6.dp, spring(dampingRatio = 0.6f, stiffness = 500f), label = "dot")
+                            val c by animateColorAsState(if (sel) Wiz.c.accentInk else Wiz.c.line, label = "dotC")
                             Box(
-                                Modifier.padding(horizontal = 3.dp).height(6.dp).width(if (sel) 18.dp else 6.dp)
-                                    .clip(CircleShape).background(if (sel) Wiz.c.accentInk else Wiz.c.line),
+                                Modifier.padding(horizontal = 3.dp).height(6.dp).width(w)
+                                    .clip(CircleShape).background(c),
                             )
                         }
                     }
@@ -184,7 +205,7 @@ fun HomeScreen(
         }
 
         // Activity heatmap
-        item {
+        enterItem(entrance, "heat", n++) {
             val byDay = remember(fills) {
                 fills.groupBy { Instant.ofEpochMilli(it.date).atZone(zone).toLocalDate() }.mapValues { e -> e.value.sumOf { it.amount } }
             }
@@ -201,7 +222,7 @@ fun HomeScreen(
 
         // Brand donut
         val named = ins.brands.filter { it.brand != null }
-        if (named.isNotEmpty()) item {
+        if (named.isNotEmpty()) enterItem(entrance, "brands", n++) {
             WizCard(Modifier.fillMaxWidth()) {
                 Overline("Where you fill up")
                 Spacer(Modifier.height(12.dp))
@@ -233,8 +254,8 @@ fun HomeScreen(
         // Records
         val records = records(fills, ins, info, unit)
         if (records.isNotEmpty()) {
-            item { SectionHeader("Personal records") }
-            item {
+            enterItem(entrance, "recordsH", n++) { SectionHeader("Personal records") }
+            enterItem(entrance, "records", n++) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     records.forEach { r ->
                         WizCard(Modifier.width(158.dp), padding = 14) {
@@ -253,9 +274,9 @@ fun HomeScreen(
             }
         }
 
-        item { SectionHeader("Recent fill-ups", "History", onSeeHistory) }
+        enterItem(entrance, "recentH", n++) { SectionHeader("Recent fill-ups", "History", onSeeHistory) }
         val recent = fills.sortedByDescending { it.date }.take(4)
-        item {
+        enterItem(entrance, "recent", n++) {
             WizCard(Modifier.fillMaxWidth(), padding = 4) {
                 recent.forEachIndexed { i, f ->
                     FillRow(f, vehicle, info[f.id], onClick = { onOpenFill(f) }, divider = i < recent.lastIndex)
@@ -280,28 +301,36 @@ private fun records(fills: List<FillUp>, ins: Insights, info: Map<String, Insigh
 }
 
 @Composable
-private fun CockpitCard(vehicle: Vehicle, ins: Insights, fillCount: Int) {
+private fun CockpitCard(vehicle: Vehicle, ins: Insights, fills: List<FillUp>) {
     val unit = vehicle.fuel.unit
+    val fillCount = fills.size
     val twoWheeler = vehicle.type == VehicleType.BIKE || vehicle.type == VehicleType.SCOOTER
     val peak = listOfNotNull(ins.avgMileage, ins.bestMileage?.mileage, ins.lastMileage).maxOrNull()
     // Scale ends on a number that splits into four whole quarters (e.g. 32 → 0/8/16/24/32, 100 → 0/25/50/75/100).
     val max = peak?.let { p -> val x = p * 1.25; val step = if (x > 40) 20.0 else if (x > 16) 8.0 else 4.0; ceil(x / step) * step }
         ?: if (twoWheeler) 80.0 else 32.0
+    val last = remember(fills) { fills.maxByOrNull { it.date } }
+    val clock = rememberAmbientClock()
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp))
             .background(Brush.verticalGradient(listOf(Cockpit.top, Cockpit.bottom))),
     ) {
-        // Soft yellow glow behind the gauge
+        // Soft yellow glow behind the gauge that breathes slowly (layer phase only).
         Box(
-            Modifier.align(Alignment.TopCenter).padding(top = 40.dp).size(220.dp)
-                .background(Brush.radialGradient(listOf(Cockpit.yellow.copy(alpha = 0.13f), Color.Transparent))),
+            Modifier.align(Alignment.TopCenter).padding(top = 36.dp).size(240.dp)
+                .graphicsLayer { val k = 0.92f + 0.08f * sin(clock.value * 0.9f); scaleX = k; scaleY = k; alpha = 0.75f + 0.25f * k }
+                .background(Brush.radialGradient(listOf(Cockpit.yellow.copy(alpha = 0.15f), Color.Transparent))),
         )
         Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Overline("Average mileage", Cockpit.muted, Modifier.weight(1f))
                 val ch = ins.mileageChange
-                if (ch != null && ins.segments.size >= 2) {
-                    val up = ch >= 0
+                AnimatedVisibility(
+                    ch != null && ins.segments.size >= 2,
+                    enter = fadeIn() + scaleIn(spring(dampingRatio = 0.5f, stiffness = 400f), initialScale = 0.6f),
+                    exit = fadeOut(),
+                ) {
+                    val up = (ch ?: 0.0) >= 0
                     val c = if (up) Cockpit.green else Cockpit.red
                     Row(
                         Modifier.clip(RoundedCornerShape(50)).background(c.copy(alpha = 0.16f)).padding(horizontal = 10.dp, vertical = 4.dp),
@@ -309,7 +338,7 @@ private fun CockpitCard(vehicle: Vehicle, ins: Insights, fillCount: Int) {
                     ) {
                         Icon(if (up) Icons.Rounded.TrendingUp else Icons.Rounded.TrendingDown, null, tint = c, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("${Fmt.pct(ch)} last tank", color = c, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Text("${Fmt.pct(ch ?: 0.0)} last tank", color = c, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -327,18 +356,51 @@ private fun CockpitCard(vehicle: Vehicle, ins: Insights, fillCount: Int) {
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.05f)).padding(vertical = 12.dp),
             ) {
-                CockpitStat("Odometer", ins.latestOdometer?.let { Fmt.km(it) } ?: "—", Modifier.weight(1f))
-                CockpitStat("Last tank", ins.lastMileage?.let { Fmt.dec(it) } ?: "—", Modifier.weight(1f))
-                CockpitStat("RSP", ins.latestRsp?.let { Fmt.inr2(it) } ?: "—", Modifier.weight(1f))
+                CockpitStat("Odometer", ins.latestOdometer, { Fmt.km(it) }, Modifier.weight(1f))
+                CockpitStat("Last tank", ins.lastMileage, { Fmt.dec(it) }, Modifier.weight(1f))
+                CockpitStat("RSP", ins.latestRsp, { Fmt.inr2(it) }, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+            // Fuel strip: a drop that fills to the last fill-up, and the running spend.
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.05f))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val level = when {
+                    last == null -> 0f
+                    vehicle.tankCapacity != null && vehicle.tankCapacity > 0 -> (last.quantity / vehicle.tankCapacity).toFloat()
+                    last.fullTank -> 1f
+                    else -> 0.62f
+                }
+                FuelDrop(level, Modifier.width(38.dp), empty = last == null)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Overline("Last fill-up", Cockpit.muted)
+                    Text(
+                        last?.let { Fmt.dec(it.quantity, 2) + " $unit · " + Fmt.inr(it.amount) } ?: "Nothing yet",
+                        style = MaterialTheme.typography.titleSmall.merge(Numeric), fontWeight = FontWeight.Bold, color = Cockpit.text, maxLines = 1,
+                    )
+                    Text(
+                        last?.let { (it.brand?.short?.let { b -> "$b · " } ?: "") + Fmt.dateShort(it.date) } ?: "Tap Add fill-up",
+                        style = MaterialTheme.typography.bodySmall, color = Cockpit.muted, maxLines = 1,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Overline("Total spent", Cockpit.muted)
+                    CountUp(ins.totalSpend, { Fmt.inr(it) }, MaterialTheme.typography.titleMedium, color = Cockpit.yellow, fontWeight = FontWeight.Black)
+                    Text(Fmt.dec(ins.totalFuel) + " $unit", style = MaterialTheme.typography.bodySmall.merge(Numeric), color = Cockpit.muted, maxLines = 1)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CockpitStat(label: String, value: String, modifier: Modifier) {
+private fun CockpitStat(label: String, value: Double?, format: (Double) -> String, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleSmall.merge(Numeric), fontWeight = FontWeight.Bold, color = Cockpit.text, maxLines = 1)
+        if (value == null) Text("—", style = MaterialTheme.typography.titleSmall.merge(Numeric), fontWeight = FontWeight.Bold, color = Cockpit.text)
+        else CountUp(value, format, MaterialTheme.typography.titleSmall, color = Cockpit.text, fontWeight = FontWeight.Bold)
         Overline(label, Cockpit.muted)
     }
 }
@@ -346,23 +408,11 @@ private fun CockpitStat(label: String, value: String, modifier: Modifier) {
 @Composable
 private fun EmptyHome(vehicle: Vehicle, onAdd: () -> Unit) {
     WizCard(Modifier.fillMaxWidth(), padding = 24) {
-        Icon(Icons.Rounded.LocalGasStation, null, tint = Wiz.c.accentInk, modifier = Modifier.size(40.dp))
-        Spacer(Modifier.height(12.dp))
-        Text("Log your first fill-up", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(6.dp))
-        Text(
+        EmptyState(
+            "Log your first fill-up",
             "Type the odometer reading, the amount you paid and the RSP. That's it. " +
                 "After two fill-ups ${vehicle.name}'s dashboard comes alive: mileage gauge, cost per km, spending ring, records and smart tips.",
-            color = Wiz.c.muted, style = MaterialTheme.typography.bodyMedium,
+            Modifier.fillMaxWidth(), EmptyArt.PUMP, "Add fill-up", onAdd,
         )
-        Spacer(Modifier.height(18.dp))
-        Button(
-            onClick = onAdd, shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Wiz.c.accent, contentColor = Wiz.c.onAccent),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
-        ) {
-            Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(8.dp))
-            Text("Add fill-up", fontWeight = FontWeight.Bold)
-        }
     }
 }

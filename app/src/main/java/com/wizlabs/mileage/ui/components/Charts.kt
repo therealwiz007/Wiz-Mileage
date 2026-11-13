@@ -2,6 +2,8 @@ package com.wizlabs.mileage.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import com.wizlabs.mileage.ui.motion.LocalMotion
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -58,9 +60,10 @@ fun LineChart(
 ) {
     if (values.isEmpty()) return
     var sel by remember(values) { mutableStateOf<Int?>(null) }
-    val progress = remember(values) { Animatable(0f) }
-    LaunchedEffect(values) { progress.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
-    val measurer = rememberTextMeasurer()
+    val motion = LocalMotion.current
+    val progress = remember(values) { Animatable(if (motion) 0f else 1f) }
+    LaunchedEffect(values) { progress.animateTo(1f, tween(1100, easing = FastOutSlowInEasing)) }
+    val measurer = rememberTextMeasurer(cacheSize = 16)
     val muted = Wiz.c.muted
     val line = Wiz.c.line
     val surface = Wiz.c.surface
@@ -124,6 +127,16 @@ fun LineChart(
                 drawPath(fill, Brush.verticalGradient(listOf(color.copy(alpha = 0.32f), color.copy(alpha = 0f)), startY = top, endY = top + h))
                 drawPath(path, color, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
             }
+            // While drawing in, a glowing "pen" leads the line.
+            val pr = progress.value
+            if (pr < 1f && pts.size > 1) {
+                val fx = pr * (pts.size - 1)
+                val i0 = fx.toInt().coerceIn(0, pts.size - 2)
+                val f = fx - i0
+                val pen = Offset(pts[i0].x + (pts[i0 + 1].x - pts[i0].x) * f, pts[i0].y + (pts[i0 + 1].y - pts[i0].y) * f)
+                drawCircle(color, 10.dp.toPx(), pen, alpha = 0.22f)
+                drawCircle(color, 4.dp.toPx(), pen)
+            }
             average?.let {
                 val ay = y(it)
                 drawLine(muted, Offset(0f, ay), Offset(w, ay), strokeWidth = 1.dp.toPx(),
@@ -132,13 +145,17 @@ fun LineChart(
                 drawText(t, topLeft = Offset(4.dp.toPx(), (ay - t.size.height - 2).coerceAtLeast(0f)))
             }
             if (values.size <= 24) pts.forEach { p ->
-                drawCircle(surface, 4.dp.toPx(), p); drawCircle(color, 2.5.dp.toPx(), p)
+                // Points pop in as the line reaches them.
+                val k = ((progress.value * w - p.x) / (24.dp.toPx())).coerceIn(0f, 1f)
+                if (k > 0f) { drawCircle(surface, 4.dp.toPx() * k, p); drawCircle(color, 2.5.dp.toPx() * k, p) }
             }
             val s = sel ?: values.lastIndex
             val sp = pts[s]
-            drawLine(color.copy(alpha = 0.35f), Offset(sp.x, top), Offset(sp.x, top + h), strokeWidth = 1.dp.toPx())
-            drawCircle(color.copy(alpha = 0.25f), 9.dp.toPx(), sp)
-            drawCircle(color, 5.dp.toPx(), sp)
+            if (sel != null || progress.value >= 1f) {
+                drawLine(color.copy(alpha = 0.35f), Offset(sp.x, top), Offset(sp.x, top + h), strokeWidth = 1.dp.toPx())
+                drawCircle(color.copy(alpha = 0.25f), 9.dp.toPx(), sp)
+                drawCircle(color, 5.dp.toPx(), sp)
+            }
 
             if (labels.isNotEmpty()) {
                 val l0 = measurer.measure(labels.first(), axisStyle)
@@ -150,6 +167,11 @@ fun LineChart(
             }
         }
     }
+}
+
+private fun backOut(x: Float): Float {
+    val c1 = 1.70158f; val c3 = c1 + 1f; val y = x - 1f
+    return 1f + c3 * y * y * y + c1 * y * y
 }
 
 private fun nearest(x: Float, width: Float, n: Int): Int =
@@ -167,8 +189,9 @@ fun BarChart(
 ) {
     if (values.isEmpty()) return
     var sel by remember(values) { mutableStateOf<Int?>(null) }
-    val progress = remember(values) { Animatable(0f) }
-    LaunchedEffect(values) { progress.animateTo(1f, tween(650, easing = FastOutSlowInEasing)) }
+    val motion = LocalMotion.current
+    val progress = remember(values) { Animatable(if (motion) 0f else 1f) }
+    LaunchedEffect(values) { progress.animateTo(1f, tween(900 + values.size * 40, easing = LinearEasing)) }
     val measurer = rememberTextMeasurer()
     val accent = Wiz.c.accent
     val idle = Wiz.c.surface2
@@ -198,7 +221,9 @@ fun BarChart(
             val bw = (slot * 0.62f).coerceAtMost(28.dp.toPx())
             val max = values.max().takeIf { it > 0 } ?: 1.0
             values.forEachIndexed { idx, v ->
-                val bh = (h * (v / max) * progress.value).toFloat().coerceAtLeast(if (v > 0) 3.dp.toPx() else 0f)
+                // Bars rise one after another with a little overshoot.
+                val pb = ((progress.value * (values.size + 3) - idx) / 3f).coerceIn(0f, 1f)
+                val bh = (h * (v / max) * backOut(pb)).toFloat().coerceAtLeast(if (v > 0 && pb > 0f) 3.dp.toPx() else 0f)
                 val left = idx * slot + (slot - bw) / 2
                 drawRoundRect(
                     if (idx == i) accent else idle,

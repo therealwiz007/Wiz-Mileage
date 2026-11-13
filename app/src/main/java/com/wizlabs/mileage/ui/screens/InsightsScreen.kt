@@ -1,6 +1,12 @@
 package com.wizlabs.mileage.ui.screens
 
 import androidx.compose.foundation.background
+import com.wizlabs.mileage.ui.components.CountUp
+import com.wizlabs.mileage.ui.components.EmptyArt
+import com.wizlabs.mileage.ui.components.EmptyState
+import com.wizlabs.mileage.ui.components.animatedValue
+import com.wizlabs.mileage.ui.motion.enterItem
+import com.wizlabs.mileage.ui.motion.rememberEntrance
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,23 +72,19 @@ fun InsightsScreen(data: AppData, vehicle: Vehicle, contentPadding: PaddingValue
     val unit = vehicle.fuel.unit
 
     if (fills.size < 2) {
-        Column(
-            Modifier.fillMaxSize().padding(contentPadding).padding(32.dp),
-            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(Icons.Rounded.Insights, null, tint = Wiz.c.accentInk, modifier = Modifier.size(40.dp))
-            Spacer(Modifier.height(12.dp))
-            Text("Insights unlock at 2 fill-ups", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(6.dp))
-            Text(
+        Box(Modifier.fillMaxSize().padding(contentPadding).padding(32.dp), contentAlignment = Alignment.Center) {
+            EmptyState(
+                "Insights unlock at 2 fill-ups",
                 "Mileage, cost per km, monthly spend, price history, brand comparison and smart tips appear " +
                     "as soon as ${vehicle.name} has two fill-ups.",
-                color = Wiz.c.muted, style = MaterialTheme.typography.bodyMedium,
+                art = EmptyArt.CHART,
             )
         }
         return
     }
 
+    val entrance = rememberEntrance(vehicle.id, period)
+    var n = 0
     LazyColumn(
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
@@ -91,16 +93,16 @@ fun InsightsScreen(data: AppData, vehicle: Vehicle, contentPadding: PaddingValue
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item {
+        enterItem(entrance, "period", n++) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Period.entries.forEach { p -> SelectChip(p.label, p == period, { period = p }) }
             }
         }
 
-        item { SummaryGrid(ins, unit) }
+        enterItem(entrance, "summary", n++) { SummaryGrid(ins, unit) }
 
         if (ins.fillCount == 0) {
-            item {
+            enterItem(entrance, "none", n++) {
                 WizCard(Modifier.fillMaxWidth()) {
                     Text("No fill-ups in this period", style = MaterialTheme.typography.titleMedium)
                     Text("Pick a longer period above.", color = Wiz.c.muted)
@@ -108,7 +110,7 @@ fun InsightsScreen(data: AppData, vehicle: Vehicle, contentPadding: PaddingValue
             }
         }
 
-        if (ins.segments.isNotEmpty()) item {
+        if (ins.segments.isNotEmpty()) enterItem(entrance, "mileage", n++) {
             WizCard(Modifier.fillMaxWidth()) {
                 Overline("Mileage · km/$unit" + if (ins.mileageEstimated) " · estimated" else "")
                 Spacer(Modifier.height(10.dp))
@@ -131,7 +133,7 @@ fun InsightsScreen(data: AppData, vehicle: Vehicle, contentPadding: PaddingValue
             }
         }
 
-        if (ins.monthly.isNotEmpty()) item {
+        if (ins.monthly.isNotEmpty()) enterItem(entrance, "monthly", n++) {
             WizCard(Modifier.fillMaxWidth()) {
                 Overline("Monthly fuel spend")
                 Spacer(Modifier.height(10.dp))
@@ -151,7 +153,7 @@ fun InsightsScreen(data: AppData, vehicle: Vehicle, contentPadding: PaddingValue
             }
         }
 
-        if (ins.rspPoints.size >= 2) item {
+        if (ins.rspPoints.size >= 2) enterItem(entrance, "rsp", n++) {
             WizCard(Modifier.fillMaxWidth()) {
                 Overline("RSP you paid · ₹/$unit")
                 Spacer(Modifier.height(10.dp))
@@ -171,13 +173,14 @@ fun InsightsScreen(data: AppData, vehicle: Vehicle, contentPadding: PaddingValue
         }
 
         val named = ins.brands.filter { it.brand != null }
-        if (named.isNotEmpty()) item {
+        if (named.isNotEmpty()) enterItem(entrance, "brands", n++) {
             WizCard(Modifier.fillMaxWidth()) {
                 Overline("Fuel brands")
                 Spacer(Modifier.height(12.dp))
                 val total = ins.brands.sumOf { it.spend }.takeIf { it > 0 } ?: 1.0
                 // Share bar
-                Row(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(50))) {
+                val grow = animatedValue(1.0, 900).toFloat()
+                Row(Modifier.fillMaxWidth(grow.coerceIn(0.001f, 1f)).height(10.dp).clip(RoundedCornerShape(50))) {
                     ins.brands.forEach { b ->
                         Box(Modifier.weight((b.spend / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight()
                             .background(b.brand?.colour ?: Wiz.c.surface2))
@@ -210,31 +213,44 @@ fun InsightsScreen(data: AppData, vehicle: Vehicle, contentPadding: PaddingValue
         }
 
         if (ins.tips.isNotEmpty()) {
-            item { SectionHeader("Smart insights") }
-            ins.tips.forEach { t -> item { TipCard(t) } }
+            enterItem(entrance, "tipsH", n++) { SectionHeader("Smart insights") }
+            ins.tips.forEachIndexed { i, t -> enterItem(entrance, "tip$i", n++) { TipCard(t) } }
         }
 
         if (data.vehicles.size > 1) {
-            item { SectionHeader("Compare vehicles") }
-            item { CompareVehicles(data, period) }
+            enterItem(entrance, "cmpH", n++) { SectionHeader("Compare vehicles") }
+            enterItem(entrance, "cmp", n++) { CompareVehicles(data, period) }
         }
     }
 }
 
+private class Tile(val label: String, val value: Double?, val format: (Double) -> String, val sub: String?)
+
 @Composable
 private fun SummaryGrid(i: Insights, unit: String) {
     val tiles = listOf(
-        Triple("Spent", Fmt.inr(i.totalSpend), "${i.fillCount} fill-up${if (i.fillCount == 1) "" else "s"}"),
-        Triple("Driven", Fmt.km(i.distance), i.kmPerDay?.let { Fmt.dec(it) + " km a day" }),
-        Triple("Mileage", i.avgMileage?.let { Fmt.dec(it) + " km/$unit" } ?: "—", if (i.mileageEstimated) "estimated" else "full-to-full"),
-        Triple("Cost per km", i.costPerKm?.let { Fmt.inr2(it) } ?: "—", i.costPerKm?.let { "${Fmt.inr(it * 100)} per 100 km" }),
-        Triple("Fuel", Fmt.dec(i.totalFuel) + " $unit", i.avgRsp?.let { "avg ${Fmt.inr2(it)}/$unit" }),
-        Triple("Per visit", i.avgFill?.let { Fmt.inr(it) } ?: "—", i.avgDaysBetween?.let { "every ${Fmt.dec(it, 0)} days" }),
+        Tile("Spent", i.totalSpend, { Fmt.inr(it) }, "${i.fillCount} fill-up${if (i.fillCount == 1) "" else "s"}"),
+        Tile("Driven", i.distance, { Fmt.km(it) }, i.kmPerDay?.let { Fmt.dec(it) + " km a day" }),
+        Tile("Mileage", i.avgMileage, { Fmt.dec(it) + " km/$unit" }, if (i.mileageEstimated) "estimated" else "full-to-full"),
+        Tile("Cost per km", i.costPerKm, { Fmt.inr2(it) }, i.costPerKm?.let { "${Fmt.inr(it * 100)} per 100 km" }),
+        Tile("Fuel", i.totalFuel, { Fmt.dec(it) + " $unit" }, i.avgRsp?.let { "avg ${Fmt.inr2(it)}/$unit" }),
+        Tile("Per visit", i.avgFill, { Fmt.inr(it) }, i.avgDaysBetween?.let { "every ${Fmt.dec(it, 0)} days" }),
     )
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { (l, v, s) -> StatTile(l, v, Modifier.weight(1f), s) }
+                row.forEach { t ->
+                    WizCard(Modifier.weight(1f), padding = 16) {
+                        Overline(t.label)
+                        Spacer(Modifier.height(6.dp))
+                        if (t.value == null) Text("—", style = MaterialTheme.typography.titleLarge.merge(Numeric))
+                        else CountUp(t.value, t.format, MaterialTheme.typography.titleLarge)
+                        if (t.sub != null) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(t.sub, style = MaterialTheme.typography.bodySmall, color = Wiz.c.muted, maxLines = 2)
+                        }
+                    }
+                }
             }
         }
     }
@@ -275,7 +291,8 @@ private fun CompareVehicles(data: AppData, period: Period) {
             }
             Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50)).background(Wiz.c.surface2)) {
-                Box(Modifier.fillMaxWidth((i.totalSpend / maxSpend).toFloat()).fillMaxHeight()
+                val frac = animatedValue(i.totalSpend / maxSpend, 900 + idx * 120).toFloat()
+                Box(Modifier.fillMaxWidth(frac.coerceIn(0f, 1f)).fillMaxHeight()
                     .clip(RoundedCornerShape(50)).background(Wiz.c.accent))
             }
             if (idx < rows.lastIndex) Spacer(Modifier.height(16.dp))

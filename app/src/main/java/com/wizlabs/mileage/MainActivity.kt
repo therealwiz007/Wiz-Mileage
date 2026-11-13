@@ -5,12 +5,37 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import com.wizlabs.mileage.ui.motion.backPeek
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
+import com.wizlabs.mileage.ui.components.PopCheck
+import com.wizlabs.mileage.ui.motion.LocalMotion
+import com.wizlabs.mileage.ui.motion.enter
+import com.wizlabs.mileage.ui.motion.pressScale
+import com.wizlabs.mileage.ui.motion.rememberEntrance
+import com.wizlabs.mileage.ui.motion.rememberHaptic
+import com.wizlabs.mileage.ui.motion.rememberMotionEnabled
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -111,6 +136,11 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) com.wizlabs.mileage.ui.motion.AmbientIdle.onTouch()
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -128,9 +158,16 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
                 window.decorView.setBackgroundColor((if (dark) DarkPalette.bg else LightPalette.bg).toArgb())
             }
+            val motion = rememberMotionEnabled()
             WizTheme(data.theme) {
-                androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = Wiz.c.bg, contentColor = Wiz.c.text) {
-                    App(data, vm, packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0", incoming.value) { incoming.value = null }
+                CompositionLocalProvider(LocalMotion provides motion) {
+                  com.wizlabs.mileage.ui.motion.ProvideAmbientClock {
+                   CompositionLocalProvider(com.wizlabs.mileage.ui.motion.LocalBackPeek provides remember { com.wizlabs.mileage.ui.motion.BackPeek() }) {
+                    androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = Wiz.c.bg, contentColor = Wiz.c.text) {
+                        App(data, vm, packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0", incoming.value) { incoming.value = null }
+                    }
+                   }
+                  }
                 }
             }
         }
@@ -176,6 +213,9 @@ private sealed interface Overlay {
 @Composable
 private fun App(data: AppData, vm: AppViewModel, version: String, incoming: String?, onIncomingSeen: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
+    val peek = com.wizlabs.mileage.ui.motion.LocalBackPeek.current
+    // Once the back transition has played, drop the peek so the next visit starts full size.
+    androidx.compose.runtime.LaunchedEffect(tab) { kotlinx.coroutines.delay(650); if (peek != null && !peek.dragging) peek.reset() }
     var overlayKey by rememberSaveable { mutableStateOf("") }
     var welcomeDone by rememberSaveable { mutableStateOf(false) }
     var switcher by remember { mutableStateOf(false) }
@@ -185,6 +225,8 @@ private fun App(data: AppData, vm: AppViewModel, version: String, incoming: Stri
 
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val haptic = rememberHaptic()
+    val motion = LocalMotion.current
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) scope.launch {
@@ -227,7 +269,14 @@ private fun App(data: AppData, vm: AppViewModel, version: String, incoming: Stri
     AnimatedContent(
         targetState = overlay,
         transitionSpec = {
-            (slideInVertically { it / 8 } + fadeIn()) togetherWith (slideOutVertically { it / 8 } + fadeOut())
+            if (targetState != null) {
+                // Editors rise up from the bottom on a soft spring; the tabs recede slightly behind them.
+                (slideInVertically(spring(dampingRatio = 0.86f, stiffness = 380f, visibilityThreshold = IntOffset.VisibilityThreshold)) { it / 5 } +
+                    fadeIn(tween(220))) togetherWith (scaleOut(tween(260), targetScale = 0.94f) + fadeOut(tween(200)))
+            } else {
+                (scaleIn(tween(280), initialScale = 0.94f) + fadeIn(tween(260))) togetherWith
+                    (slideOutVertically(tween(260)) { it / 6 } + fadeOut(tween(200)))
+            }
         },
         contentKey = { Overlay.encode(it).substringBefore(":") },
         label = "overlay",
@@ -304,14 +353,23 @@ private fun App(data: AppData, vm: AppViewModel, version: String, incoming: Stri
                                     Modifier.clip(RoundedCornerShape(50)).clickable { switcher = true }.padding(end = 8.dp, top = 4.dp, bottom = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    IconBadge(v.type.icon(), size = 36)
-                                    Spacer(Modifier.width(10.dp))
-                                    Column {
-                                        Text(v.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                                        Text(
-                                            if (tab == Tab.GARAGE) "Garage & settings" else greeting(),
-                                            style = MaterialTheme.typography.bodySmall, color = Wiz.c.muted, maxLines = 1,
-                                        )
+                                    AnimatedContent(
+                                        targetState = v,
+                                        contentKey = { it.id },
+                                        transitionSpec = { vehicleSwap(data, initialState.id, targetState.id) },
+                                        label = "title",
+                                    ) { tv ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconBadge(tv.type.icon(), size = 36)
+                                            Spacer(Modifier.width(10.dp))
+                                            Column {
+                                                Text(tv.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                                                Text(
+                                                    if (tab == Tab.GARAGE) "Garage & settings" else greeting(),
+                                                    style = MaterialTheme.typography.bodySmall, color = Wiz.c.muted, maxLines = 1,
+                                                )
+                                            }
+                                        }
                                     }
                                     Icon(Icons.Rounded.KeyboardArrowDown, "Switch vehicle", tint = Wiz.c.muted)
                                 }
@@ -330,9 +388,15 @@ private fun App(data: AppData, vm: AppViewModel, version: String, incoming: Stri
                     bottomBar = {
                         NavigationBar(containerColor = Wiz.c.surface, tonalElevation = 0.dp) {
                             Tab.entries.forEach { t ->
+                                val sel = tab == t
+                                val bounce = remember { Animatable(1f) }
+                                LaunchedEffect(sel) {
+                                    if (sel && motion) { bounce.snapTo(0.7f); bounce.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 500f)) }
+                                }
                                 NavigationBarItem(
-                                    selected = tab == t, onClick = { tab = t },
-                                    icon = { Icon(t.icon, null) }, label = { Text(t.label) },
+                                    selected = sel, onClick = { if (!sel) haptic(); tab = t },
+                                    icon = { Icon(t.icon, null, Modifier.graphicsLayer { scaleX = bounce.value; scaleY = bounce.value }) },
+                                    label = { Text(t.label) },
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = Wiz.c.onAccent, indicatorColor = Wiz.c.accent,
                                         selectedTextColor = Wiz.c.text, unselectedIconColor = Wiz.c.muted, unselectedTextColor = Wiz.c.muted,
@@ -342,16 +406,40 @@ private fun App(data: AppData, vm: AppViewModel, version: String, incoming: Stri
                         }
                     },
                     floatingActionButton = {
-                        if (tab == Tab.HOME || tab == Tab.HISTORY) ExtendedFloatingActionButton(
-                            onClick = { open(Overlay.Fill(null)) },
-                            containerColor = Wiz.c.accent, contentColor = Wiz.c.onAccent, shape = RoundedCornerShape(20.dp),
-                            icon = { Icon(Icons.Rounded.Add, null) },
-                            text = { Text("Add fill-up", fontWeight = FontWeight.Bold) },
-                        )
+                        AnimatedVisibility(
+                            tab == Tab.HOME || tab == Tab.HISTORY,
+                            enter = scaleIn(spring(dampingRatio = 0.5f, stiffness = 420f)) + fadeIn(),
+                            exit = scaleOut(tween(160)) + fadeOut(tween(140)),
+                        ) {
+                            val fabInteraction = remember { MutableInteractionSource() }
+                            ExtendedFloatingActionButton(
+                                onClick = { haptic(); open(Overlay.Fill(null)) },
+                                interactionSource = fabInteraction,
+                                modifier = Modifier.pressScale(fabInteraction, 0.92f),
+                                containerColor = Wiz.c.accent, contentColor = Wiz.c.onAccent, shape = RoundedCornerShape(20.dp),
+                                icon = { Icon(Icons.Rounded.Add, null) },
+                                text = { Text("Add fill-up", fontWeight = FontWeight.Bold) },
+                            )
+                        }
                     },
                 ) { pad ->
-                    BackHandler(enabled = tab != Tab.HOME) { tab = Tab.HOME }
-                    when (tab) {
+                    com.wizlabs.mileage.ui.motion.WizBackHandler(tab.name, enabled = tab != Tab.HOME) { tab = Tab.HOME }
+                    AnimatedContent(
+                        targetState = tab to v.id,
+                        transitionSpec = {
+                            val (fromTab, fromV) = initialState
+                            val (toTab, toV) = targetState
+                            if (fromTab != toTab) {
+                                // Slide in the direction of the tab you tapped.
+                                val dir = if (toTab.ordinal > fromTab.ordinal) 1 else -1
+                                (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { dir * it / 5 } + fadeIn(tween(260))) togetherWith
+                                    (slideOutHorizontally(tween(260)) { -dir * it / 5 } + fadeOut(tween(180)))
+                            } else vehicleSwap(data, fromV, toV)
+                        },
+                        label = "tabs",
+                    ) { (tabNow, _) ->
+                    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().backPeek(tabNow.name)) {
+                    when (tabNow) {
                         Tab.HOME -> HomeScreen(
                             v, fills, pad, onAdd = { open(Overlay.Fill(null)) }, onOpenFill = { open(Overlay.Fill(it.id)) },
                             onSeeInsights = { tab = Tab.INSIGHTS }, onSeeHistory = { tab = Tab.HISTORY },
@@ -371,18 +459,27 @@ private fun App(data: AppData, vm: AppViewModel, version: String, incoming: Stri
                             onImport = { importLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel", "*/*")) },
                         )
                     }
+                    }
+                    }
                 }
 
                 if (switcher) ModalBottomSheet(onDismissRequest = { switcher = false }, containerColor = Wiz.c.surface) {
                     Column(Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 4.dp)) {
                         Overline("Switch vehicle", modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
-                        data.vehicles.forEach { x ->
+                        val sheetEntrance = rememberEntrance()
+                        data.vehicles.forEachIndexed { idx, x ->
                             val sel = x.id == v.id
                             val xf = data.fills.filter { it.vehicleId == x.id }
+                            val rowBg by animateColorAsState(if (sel) Wiz.c.surface2 else Wiz.c.surface, label = "rowBg")
                             Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                                    .background(if (sel) Wiz.c.surface2 else Wiz.c.surface)
-                                    .clickable { vm.selectVehicle(x.id); switcher = false }
+                                Modifier.enter(sheetEntrance, x.id, idx).fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                                    .background(rowBg)
+                                    .clickable {
+                                        if (!sel) haptic()
+                                        vm.selectVehicle(x.id)
+                                        // Let the check pop before the sheet slides away.
+                                        scope.launch { kotlinx.coroutines.delay(if (sel || !motion) 0 else 220); switcher = false }
+                                    }
                                     .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -396,6 +493,7 @@ private fun App(data: AppData, vm: AppViewModel, version: String, incoming: Stri
                                         style = MaterialTheme.typography.bodySmall, color = Wiz.c.muted,
                                     )
                                 }
+                                PopCheck(sel, Wiz.c.accentInk)
                             }
                         }
                         Row(
@@ -413,6 +511,16 @@ private fun App(data: AppData, vm: AppViewModel, version: String, incoming: Stri
             }
         }
     }
+}
+
+/** Vehicle switch: the new vehicle slides in from the side it sits on in your garage list. */
+private fun vehicleSwap(data: AppData, from: String, to: String): ContentTransform {
+    val a = data.vehicles.indexOfFirst { it.id == from }
+    val b = data.vehicles.indexOfFirst { it.id == to }
+    val dir = if (b >= a) 1 else -1
+    return (slideInHorizontally(spring(dampingRatio = 0.82f, stiffness = 300f, visibilityThreshold = IntOffset.VisibilityThreshold)) { dir * it / 3 } +
+        fadeIn(tween(240)) + scaleIn(tween(320), initialScale = 0.96f)) togetherWith
+        (slideOutHorizontally(tween(240)) { -dir * it / 3 } + fadeOut(tween(180)))
 }
 
 private fun greeting(): String {

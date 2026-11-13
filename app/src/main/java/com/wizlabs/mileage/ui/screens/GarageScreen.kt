@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import com.wizlabs.mileage.ui.motion.enterItem
+import com.wizlabs.mileage.ui.motion.rememberEntrance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -58,6 +60,8 @@ fun GarageScreen(
     onReceive: () -> Unit,
     onPrivacy: () -> Unit,
 ) {
+    val entrance = rememberEntrance()
+    var n = 0
     LazyColumn(
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
@@ -66,9 +70,9 @@ fun GarageScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { SectionHeader("Vehicles", "Add", onAddVehicle) }
+        enterItem(entrance, "g1", n++) { SectionHeader("Vehicles", "Add", onAddVehicle) }
         data.vehicles.forEach { v ->
-            item(key = v.id) {
+            enterItem(entrance, v.id, n++) {
                 val fills = data.fills.filter { it.vehicleId == v.id }
                 val selected = v.id == data.selectedVehicle?.id
                 WizCard(Modifier.fillMaxWidth(), onClick = { onSelect(v) }, padding = 16) {
@@ -82,7 +86,12 @@ fun GarageScreen(
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(v.name, style = MaterialTheme.typography.titleMedium)
-                                if (selected) { Spacer(Modifier.width(8.dp)); Pill("ACTIVE", Wiz.c.accentInk) }
+                                androidx.compose.animation.AnimatedVisibility(
+                                    selected,
+                                    enter = androidx.compose.animation.scaleIn(androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 450f)) +
+                                        androidx.compose.animation.fadeIn(),
+                                    exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut(),
+                                ) { Row { Spacer(Modifier.width(8.dp)); Pill("ACTIVE", Wiz.c.accentInk) } }
                             }
                             Text(
                                 listOf(v.type.label, v.fuel.label, v.registration).filter { it.isNotBlank() }.joinToString(" · "),
@@ -99,7 +108,7 @@ fun GarageScreen(
                 }
             }
         }
-        item {
+        enterItem(entrance, "g2", n++) {
             WizCard(Modifier.fillMaxWidth(), onClick = onAddVehicle, padding = 16) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconBadge(Icons.Rounded.Add, tint = Wiz.c.text, bg = Wiz.c.surface2)
@@ -112,8 +121,8 @@ fun GarageScreen(
             }
         }
 
-        item { SectionHeader("Share with another phone") }
-        item {
+        enterItem(entrance, "g3", n++) { SectionHeader("Share with another phone") }
+        enterItem(entrance, "g4", n++) {
             WizCard(Modifier.fillMaxWidth(), padding = 4) {
                 ActionRow(Icons.Rounded.QrCode2, "Share logs", "Show a QR code or send a share code. No internet needed.", onShare)
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = Wiz.c.line)
@@ -121,8 +130,8 @@ fun GarageScreen(
             }
         }
 
-        item { SectionHeader("Appearance") }
-        item {
+        enterItem(entrance, "g5", n++) { SectionHeader("Appearance") }
+        enterItem(entrance, "g6", n++) {
             WizCard(Modifier.fillMaxWidth(), padding = 16) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ThemeMode.entries.forEach { t -> SelectChip(t.label, data.theme == t, { onTheme(t) }) }
@@ -130,15 +139,15 @@ fun GarageScreen(
             }
         }
 
-        item { SectionHeader("Your data") }
-        item {
+        enterItem(entrance, "g7", n++) { SectionHeader("Your data") }
+        enterItem(entrance, "g8", n++) {
             WizCard(Modifier.fillMaxWidth(), padding = 4) {
                 ActionRow(Icons.Rounded.FileDownload, "Export to CSV", "All vehicles and fill-ups. Opens in Excel or Google Sheets, and works as a backup.", onExport)
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = Wiz.c.line)
                 ActionRow(Icons.Rounded.FileUpload, "Import CSV", "Restore a backup or bring in old records. Duplicates are skipped.", onImport)
             }
         }
-        item {
+        enterItem(entrance, "g9", n++) {
             WizCard(Modifier.fillMaxWidth(), padding = 16) {
                 Row(verticalAlignment = Alignment.Top) {
                     Icon(Icons.Rounded.Lock, null, tint = Wiz.c.good, modifier = Modifier.size(20.dp))
@@ -158,7 +167,7 @@ fun GarageScreen(
                 }
             }
         }
-        item {
+        enterItem(entrance, "g10", n++) {
             Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Overline("Wiz Mileage · v$version")
                 Spacer(Modifier.height(2.dp))

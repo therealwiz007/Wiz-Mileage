@@ -67,97 +67,13 @@ object Cockpit {
 /** Animates from 0 to [target] whenever the target changes. */
 @Composable
 fun animatedValue(target: Double, durationMs: Int = 1100): Double {
-    val a = remember { Animatable(0f) }
-    LaunchedEffect(target) { a.animateTo(target.toFloat(), tween(durationMs, easing = FastOutSlowInEasing)) }
-    return a.value.toDouble()
-}
-
-private const val START = 150f
-private const val SWEEP = 240f
-
-/**
- * Speedometer-style gauge: a red→green arc over [0, max], ticks, a sprung needle and the value in the centre.
- */
-@Composable
-fun MileageGauge(
-    value: Double?,
-    max: Double,
-    unitLabel: String,
-    caption: String,
-    modifier: Modifier = Modifier,
-) {
-    val frac = ((value ?: 0.0) / max).coerceIn(0.0, 1.0).toFloat()
-    val needle = remember { Animatable(0f) }
-    LaunchedEffect(frac) { needle.animateTo(frac, spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessVeryLow)) }
-    val shown = animatedValue(value ?: 0.0)
-    val measurer = rememberTextMeasurer()
-    val tickStyle = TextStyle(fontSize = 11.sp, color = Cockpit.muted, fontFeatureSettings = "tnum")
-
-    Box(modifier.aspectRatio(1.18f), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val stroke = 16.dp.toPx()
-            val r = min(size.width / 2f, size.height / 1.62f) - stroke
-            val c = Offset(size.width / 2f, r + stroke + 4.dp.toPx())
-            val tl = Offset(c.x - r, c.y - r)
-            val arcSize = Size(r * 2, r * 2)
-
-            drawArc(Cockpit.track, START, SWEEP, false, tl, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-            val brush = Brush.sweepGradient(
-                0f to Cockpit.red, 0.25f to Cockpit.orange, 0.45f to Cockpit.yellow, 0.667f to Cockpit.green,
-                0.83f to Cockpit.green, 1f to Cockpit.red, center = c,
-            )
-            rotate(START, c) {
-                drawArc(brush, 0f, SWEEP * needle.value.coerceIn(0f, 1f), false, tl, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-            }
-            // Ticks
-            for (i in 0..12) {
-                val a = Math.toRadians((START + SWEEP * i / 12f).toDouble())
-                val major = i % 3 == 0
-                val r1 = r - stroke / 2 - 6.dp.toPx()
-                val r2 = r1 - (if (major) 10.dp.toPx() else 5.dp.toPx())
-                drawLine(
-                    if (major) Cockpit.muted else Cockpit.track,
-                    Offset(c.x + r1 * cos(a).toFloat(), c.y + r1 * sin(a).toFloat()),
-                    Offset(c.x + r2 * cos(a).toFloat(), c.y + r2 * sin(a).toFloat()),
-                    strokeWidth = (if (major) 2.dp else 1.5.dp).toPx(), cap = StrokeCap.Round,
-                )
-                if (major) {
-                    val label = measurer.measure(Math.round(max * i / 12).toString(), tickStyle)
-                    val rl = r2 - 12.dp.toPx()
-                    drawText(label, topLeft = Offset(
-                        c.x + rl * cos(a).toFloat() - label.size.width / 2f,
-                        c.y + rl * sin(a).toFloat() - label.size.height / 2f,
-                    ))
-                }
-            }
-            // Needle
-            val na = Math.toRadians((START + SWEEP * needle.value).toDouble())
-            val len = r - stroke - 2.dp.toPx()
-            val tip = Offset(c.x + len * cos(na).toFloat(), c.y + len * sin(na).toFloat())
-            val back = Offset(c.x - 14.dp.toPx() * cos(na).toFloat(), c.y - 14.dp.toPx() * sin(na).toFloat())
-            if (value != null) {
-                drawLine(Cockpit.yellow.copy(alpha = 0.25f), back, tip, strokeWidth = 9.dp.toPx(), cap = StrokeCap.Round)
-                drawLine(Cockpit.text, back, tip, strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
-                drawCircle(Cockpit.yellow, 4.dp.toPx(), tip)
-            }
-            drawCircle(Cockpit.top, 13.dp.toPx(), c)
-            drawCircle(Cockpit.yellow, 13.dp.toPx(), c, style = Stroke(3.dp.toPx()))
-            drawCircle(Cockpit.yellow, 5.dp.toPx(), c)
-        }
-        Column(
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    if (value == null) "—" else String.format(Locale.US, "%.1f", shown),
-                    style = MaterialTheme.typography.displayMedium.merge(Numeric), fontWeight = FontWeight.Black, color = Cockpit.text,
-                )
-                Text(" $unitLabel", style = MaterialTheme.typography.titleMedium, color = Cockpit.muted, modifier = Modifier.padding(bottom = 9.dp))
-            }
-            Text(caption, style = MaterialTheme.typography.bodySmall, color = Cockpit.muted)
-        }
+    val motion = com.wizlabs.mileage.ui.motion.LocalMotion.current
+    val a = remember { Animatable(if (motion) 0f else target.toFloat()) }
+    LaunchedEffect(target, motion) {
+        if (motion) a.animateTo(target.toFloat(), tween(durationMs, easing = FastOutSlowInEasing)) else a.snapTo(target.toFloat())
     }
+    // Land exactly on the target (Float can't hold every rupee value precisely).
+    return if (!a.isRunning && a.value == target.toFloat()) target else a.value.toDouble()
 }
 
 /** Progress ring with a centred label. [progress] may exceed 1 (drawn as a full ring plus an overflow arc). */

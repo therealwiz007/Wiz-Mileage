@@ -1,6 +1,11 @@
 package com.wizlabs.mileage.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import com.wizlabs.mileage.ui.components.EmptyArt
+import com.wizlabs.mileage.ui.components.EmptyState
+import com.wizlabs.mileage.ui.motion.enterItem
+import com.wizlabs.mileage.ui.motion.rememberEntrance
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -51,17 +56,17 @@ fun HistoryScreen(
         fills.sortedByDescending { it.date }.groupBy { YearMonth.from(Instant.ofEpochMilli(it.date).atZone(zone)) }
     }
     if (fills.isEmpty()) {
-        Column(
-            Modifier.fillMaxSize().padding(contentPadding).padding(32.dp),
-            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(Icons.Rounded.ReceiptLong, null, tint = Wiz.c.muted, modifier = Modifier.padding(bottom = 12.dp))
-            Text("No fill-ups yet", style = MaterialTheme.typography.titleLarge)
-            Text("Every fill-up for ${vehicle.name} shows up here, grouped by month.", color = Wiz.c.muted,
-                style = MaterialTheme.typography.bodyMedium)
+        Box(Modifier.fillMaxSize().padding(contentPadding).padding(32.dp), contentAlignment = Alignment.Center) {
+            EmptyState(
+                "No fill-ups yet",
+                "Every fill-up for ${vehicle.name} shows up here, grouped by month.",
+                art = EmptyArt.RECEIPT,
+            )
         }
         return
     }
+    val entrance = rememberEntrance(vehicle.id)
+    var n = 0
     LazyColumn(
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
@@ -71,7 +76,7 @@ fun HistoryScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         groups.forEach { (_, list) ->
-            item(key = "h" + list.first().id) {
+            enterItem(entrance, "h" + list.first().id, n++) {
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 10.dp), verticalAlignment = Alignment.Bottom) {
                     Text(Fmt.month(list.first().date), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     Text(
@@ -80,7 +85,7 @@ fun HistoryScreen(
                     )
                 }
             }
-            item(key = "c" + list.first().id) {
+            enterItem(entrance, "c" + list.first().id, n++) {
                 WizCard(Modifier.fillMaxWidth(), padding = 4) {
                     list.forEachIndexed { i, f ->
                         FillRow(f, vehicle, info[f.id], onClick = { onOpenFill(f) }, divider = i < list.lastIndex)

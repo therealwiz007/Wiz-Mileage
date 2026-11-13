@@ -1,6 +1,30 @@
 package com.wizlabs.mileage.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
+import com.wizlabs.mileage.ui.motion.LocalMotion
+import com.wizlabs.mileage.ui.motion.pressScale
+import com.wizlabs.mileage.ui.motion.rememberHaptic
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -64,13 +88,15 @@ fun WizCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shape = RoundedCornerShape(22.dp)
+    val interaction = remember { MutableInteractionSource() }
     Surface(
-        modifier = modifier,
+        modifier = if (onClick != null) modifier.pressScale(interaction, 0.97f) else modifier,
         shape = shape,
         color = Wiz.c.surface,
         border = BorderStroke(1.dp, Wiz.c.line),
         onClick = onClick ?: {},
         enabled = onClick != null,
+        interactionSource = interaction,
     ) {
         Column(Modifier.padding(padding.dp), content = content)
     }
@@ -158,23 +184,114 @@ fun SelectChip(
     modifier: Modifier = Modifier,
     leading: (@Composable () -> Unit)? = null,
 ) {
-    val bg = if (selected) Wiz.c.accent else Wiz.c.surface2
-    val fg = if (selected) Wiz.c.onAccent else Wiz.c.text
+    val bg by animateColorAsState(if (selected) Wiz.c.accent else Wiz.c.surface2, tween(220), label = "chipBg")
+    val fg by animateColorAsState(if (selected) Wiz.c.onAccent else Wiz.c.text, tween(220), label = "chipFg")
+    val interaction = remember { MutableInteractionSource() }
+    val haptic = rememberHaptic()
     Row(
-        modifier.clip(RoundedCornerShape(50)).background(bg).clickable(onClick = onClick)
+        modifier.pressScale(interaction, 0.92f).clip(RoundedCornerShape(50)).background(bg)
+            .clickable(interaction, ripple()) { haptic(); onClick() }
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        leading?.invoke()
+        if (leading != null) {
+            // The leading dot/icon swaps for a check that pops in with a spring when selected.
+            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+                PopCheck(selected, fg, alt = leading)
+            }
+            Spacer(Modifier.width(8.dp))
+        } else {
+            AnimatedVisibility(
+                selected,
+                enter = expandHorizontally(spring(dampingRatio = 0.7f, stiffness = 500f)) +
+                    scaleIn(spring(dampingRatio = 0.4f, stiffness = 500f), initialScale = 0.2f),
+                exit = shrinkHorizontally(tween(160)) + fadeOut(tween(120)),
+            ) {
+                Row {
+                    Icon(Icons.Rounded.Check, null, tint = fg, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                }
+            }
+        }
         Text(text, color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+/** A check mark that pops in (overshooting spring) over [alt] when [checked]. */
+@Composable
+fun PopCheck(checked: Boolean, tint: Color, alt: (@Composable () -> Unit)? = null) {
+    val motion = LocalMotion.current
+    val s = remember { Animatable(if (checked) 1f else 0f) }
+    LaunchedEffect(checked, motion) {
+        val target = if (checked) 1f else 0f
+        if (motion) s.animateTo(target, if (checked) spring(dampingRatio = 0.38f, stiffness = 420f) else tween(140)) else s.snapTo(target)
+    }
+    Box(contentAlignment = Alignment.Center) {
+        if (alt != null) Box(Modifier.graphicsLayer { val v = 1f - s.value.coerceIn(0f, 1f); alpha = v; scaleX = v; scaleY = v }) { alt() }
+        Icon(
+            Icons.Rounded.Check, null, tint = tint,
+            modifier = Modifier.size(18.dp).graphicsLayer {
+                val v = s.value; alpha = v.coerceIn(0f, 1f); scaleX = v; scaleY = v; rotationZ = (1f - v) * -40f
+            },
+        )
+    }
+}
+
+/** Primary yellow button with springy press and a haptic tick. */
+@Composable
+fun WizButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    height: Int = 54,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val haptic = rememberHaptic()
+    Button(
+        onClick = { haptic(); onClick() }, enabled = enabled, interactionSource = interaction,
+        modifier = modifier.height(height.dp).pressScale(interaction), shape = RoundedCornerShape(18.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Wiz.c.accent, contentColor = Wiz.c.onAccent,
+            disabledContainerColor = Wiz.c.surface2, disabledContentColor = Wiz.c.muted,
+        ),
+        contentPadding = PaddingValues(horizontal = 22.dp),
+    ) {
+        if (icon != null) { Icon(icon, null); Spacer(Modifier.width(8.dp)) }
+        Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/** Empty state: a small drawn illustration that floats gently, a title, a line of help and an optional action. */
+@Composable
+fun EmptyState(
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+    art: EmptyArt = EmptyArt.PUMP,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        EmptyIllustration(art, Modifier.size(132.dp))
+        Spacer(Modifier.height(16.dp))
+        Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(6.dp))
+        Text(body, color = Wiz.c.muted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+        if (action != null && onAction != null) {
+            Spacer(Modifier.height(20.dp))
+            WizButton(action, onAction, icon = Icons.Rounded.Add)
+        }
     }
 }
 
 @Composable
 fun IconBadge(icon: ImageVector, tint: Color = Wiz.c.onAccent, bg: Color = Wiz.c.accent, size: Int = 44) {
+    val b by animateColorAsState(bg, tween(260), label = "badgeBg")
+    val t by animateColorAsState(tint, tween(260), label = "badgeTint")
     Box(
-        Modifier.size(size.dp).clip(RoundedCornerShape((size * 0.32).dp)).background(bg),
+        Modifier.size(size.dp).clip(RoundedCornerShape((size * 0.32).dp)).background(b),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = tint, modifier = Modifier.size((size * 0.55).dp)) }
+    ) { Icon(icon, null, tint = t, modifier = Modifier.size((size * 0.55).dp)) }
 }

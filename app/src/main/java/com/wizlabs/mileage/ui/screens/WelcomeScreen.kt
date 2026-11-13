@@ -34,34 +34,37 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.wizlabs.mileage.ui.components.IconBadge
+import com.wizlabs.mileage.ui.components.WizButton
+import com.wizlabs.mileage.ui.components.bob
+import com.wizlabs.mileage.ui.motion.enter
+import com.wizlabs.mileage.ui.motion.rememberEntrance
 import com.wizlabs.mileage.ui.theme.Wiz
 
 @Composable
 fun WelcomeScreen(onStart: () -> Unit, onReceive: () -> Unit) {
+    val entrance = rememberEntrance()
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Column {
             Spacer(Modifier.height(32.dp))
-            Box(Modifier.size(84.dp).clip(RoundedCornerShape(24.dp))) {
+            Box(Modifier.enter(entrance, "logo", 0).bob(3f).size(84.dp).clip(RoundedCornerShape(24.dp))) {
                 Image(painterResource(R.drawable.ic_launcher_background), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.fillMaxSize().scale(1.45f))
             }
             Spacer(Modifier.height(24.dp))
-            Text("Wiz Mileage", style = MaterialTheme.typography.displaySmall)
+            Text("Wiz Mileage", style = MaterialTheme.typography.displaySmall, modifier = Modifier.enter(entrance, "title", 1))
             Spacer(Modifier.height(8.dp))
-            Text("Every litre. Every rupee. Every km.", style = MaterialTheme.typography.titleMedium, color = Wiz.c.accentInk)
+            Text("Every litre. Every rupee. Every km.", style = MaterialTheme.typography.titleMedium, color = Wiz.c.accentInk,
+                modifier = Modifier.enter(entrance, "tag", 2))
             Spacer(Modifier.height(36.dp))
-            Feature(Icons.Rounded.Speed, "Three numbers per fill-up", "Odometer, amount and RSP. The RSP is remembered, so most days you type just two.")
-            Feature(Icons.Rounded.Insights, "Insights that mean something", "Real mileage, cost per km, spending pace, price changes and which fuel brand does best.")
-            Feature(Icons.Rounded.Lock, "Yours alone", "Works offline. No account, no ads, no internet permission.")
+            Box(Modifier.enter(entrance, "f1", 3)) { Feature(Icons.Rounded.Speed, "Three numbers per fill-up", "Odometer, amount and RSP. The RSP is remembered, so most days you type just two.") }
+            Box(Modifier.enter(entrance, "f2", 4)) { Feature(Icons.Rounded.Insights, "Insights that mean something", "Real mileage, cost per km, spending pace, price changes and which fuel brand does best.") }
+            Box(Modifier.enter(entrance, "f3", 5)) { Feature(Icons.Rounded.Lock, "Yours alone", "Works offline. No account, no ads, no internet permission.") }
         }
-        Column {
-        Button(
-            onClick = onStart, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(18.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Wiz.c.accent, contentColor = Wiz.c.onAccent),
-        ) { Text("Add your first vehicle", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }
+        Column(Modifier.enter(entrance, "cta", 6)) {
+        WizButton("Add your first vehicle", onStart, Modifier.fillMaxWidth(), height = 58)
         androidx.compose.material3.TextButton(onClick = onReceive, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
             Text("Got a share code? Receive logs", color = Wiz.c.accentInk, fontWeight = FontWeight.SemiBold)
         }
